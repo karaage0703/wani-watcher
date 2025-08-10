@@ -35,15 +35,21 @@ class WaniDetector:
         config.image_size = (512, 512)  # タプル形式で指定
 
         net = EfficientDet(config, pretrained_backbone=False)
-        self.model = DetBenchPredict(net)
-
-        # 学習済み重みを読み込み
+        
+        # 学習時と同じDetBenchTrainモデルを作成して重みを読み込む
         if os.path.exists(self.model_path):
+            # DetBenchTrainで重みを読み込み
+            from effdet import DetBenchTrain
+            train_model = DetBenchTrain(net, config)
             checkpoint = torch.load(self.model_path, map_location=self.device)
-            self.model.load_state_dict(checkpoint)
+            train_model.load_state_dict(checkpoint)
+            
+            # 推論用のDetBenchPredictを作成し、netの重みをコピー
+            self.model = DetBenchPredict(net)
             print(f"Loaded model from: {self.model_path}")
         else:
             print(f"Warning: Model file not found: {self.model_path}")
+            self.model = DetBenchPredict(net)
 
         self.model.to(self.device)
         self.model.eval()
@@ -93,17 +99,29 @@ class WaniDetector:
                 detection = output[0, i]  # バッチの最初の画像
                 
                 if len(detection) >= 6:
-                    x1, y1, x2, y2, confidence, class_id = detection
+                    # 注意: モデル出力の座標が入れ替わっている
+                    y1, x1, y2, x2, confidence, class_id = detection
                     
                     print(f"Debug: Detection {i}: conf={confidence:.4f}, class={class_id:.1f}, bbox=[{x1:.1f},{y1:.1f},{x2:.1f},{y2:.1f}]")
                     
                     # 信頼度でフィルタリング
                     if confidence > self.confidence_threshold:
                         # 座標を元の画像サイズに変換
-                        x1 = int(x1 * original_size[0] / 512)
-                        y1 = int(y1 * original_size[1] / 512)
-                        x2 = int(x2 * original_size[0] / 512)
-                        y2 = int(y2 * original_size[1] / 512)
+                        # モデル出力は512x512座標系なので、元画像のサイズに合わせてスケール
+                        # 生成画像は640x640なので、640/512でスケール
+                        if original_size[0] == original_size[1]:  # 正方形画像の場合
+                            scale = original_size[0] / 512
+                            x1 = int(x1 * scale)
+                            y1 = int(y1 * scale)
+                            x2 = int(x2 * scale)
+                            y2 = int(y2 * scale)
+                        else:  # アスペクト比が異なる場合
+                            scale_x = original_size[0] / 512
+                            scale_y = original_size[1] / 512
+                            x1 = int(x1 * scale_x)
+                            y1 = int(y1 * scale_y)
+                            x2 = int(x2 * scale_x)
+                            y2 = int(y2 * scale_y)
                         
                         detections.append({
                             "bbox": [x1, y1, x2, y2], 
