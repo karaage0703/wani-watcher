@@ -1,0 +1,39 @@
+[project]
+name = "wani-watcher"
+version = "0.1.0"
+description = "Wani detection system for Wani Wani Panic game"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "Pillow>=10.0.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "timm>=0.9.0",
+    "matplotlib>=3.7.0",
+    "effdet>=0.4.0",
+    "pycocotools>=2.0.0",
+    "tqdm>=4.65.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[project.scripts]
+generate-data = "generate_training_data:main"
+train = "train_wani_detector:main"
+detect = "detect_wani:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
