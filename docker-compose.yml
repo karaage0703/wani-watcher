@@ -1,0 +1,75 @@
+
+services:
+  wani-trainer:
+    build: .
+    image: wani-watcher:latest
+    container_name: wani-trainer
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+    shm_size: '8gb'  # 共有メモリを増やす
+    volumes:
+      # コードをマウント
+      - .:/workspace
+      # uvのキャッシュを永続化
+      - uv-cache:/root/.cache/uv
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["uv", "run", "python", "train_wani_detector.py", "--epochs", "50", "--batch-size", "8"]
+    
+  wani-generator:
+    build: .
+    image: wani-watcher:latest
+    container_name: wani-generator
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # コードをマウント
+      - .:/workspace
+      # uvのキャッシュを永続化
+      - uv-cache:/root/.cache/uv
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["uv", "run", "python", "generate_training_data.py", "--num-images", "1000"]
+    profiles:
+      - generate
+
+  wani-detector:
+    build: .
+    image: wani-watcher:latest
+    container_name: wani-detector
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # コードをマウント
+      - .:/workspace
+      # uvのキャッシュを永続化
+      - uv-cache:/root/.cache/uv
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["uv", "run", "python", "detect_wani.py", "--input", "test_images/", "--output", "results/"]
+    profiles:
+      - detect
+
+volumes:
+  uv-cache:

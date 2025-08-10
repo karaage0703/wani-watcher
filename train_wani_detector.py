@@ -51,15 +51,15 @@ class WaniDataset(Dataset):
                     if len(parts) == 5:
                         class_id, x_center, y_center, width, height = map(float, parts)
 
-                        # YOLO形式からYXYX形式に変換（effdet用）
+                        # YOLO形式からXYXY形式に変換（effdet用）
                         img_w, img_h = image.size
                         x1 = (x_center - width / 2) * img_w
                         y1 = (y_center - height / 2) * img_h
                         x2 = (x_center + width / 2) * img_w
                         y2 = (y_center + height / 2) * img_h
 
-                        # YXYX形式で保存
-                        boxes.append([y1, x1, y2, x2])
+                        # XYXY形式で保存
+                        boxes.append([x1, y1, x2, y2])
                         labels.append(int(class_id) + 1)  # effdetでは1から開始
 
         # リサイズ
@@ -68,8 +68,8 @@ class WaniDataset(Dataset):
             scale_y = self.img_size / image.height
             image = image.resize((self.img_size, self.img_size))
 
-            # ボックス座標もリサイズに合わせて調整（YXYX形式）
-            boxes = [[y1 * scale_y, x1 * scale_x, y2 * scale_y, x2 * scale_x] for y1, x1, y2, x2 in boxes]
+            # ボックス座標もリサイズに合わせて調整（XYXY形式）
+            boxes = [[x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y] for x1, y1, x2, y2 in boxes]
 
         if self.transform:
             image = self.transform(image)
@@ -84,7 +84,7 @@ class WaniDataset(Dataset):
 
         # effdet のDetBenchTrainが期待する形式に変更
         target = {
-            "bbox": boxes,  # YXYX 形式のバウンディングボックス
+            "bbox": boxes,  # XYXY 形式のバウンディングボックス
             "cls": labels,  # クラスラベル
             "img_id": torch.tensor([idx]),
             "img_size": torch.tensor([self.img_size, self.img_size]),
@@ -112,7 +112,18 @@ class WaniDetectorTrainer:
         # モデル作成
         net = EfficientDet(config, pretrained_backbone=True)
         self.model = DetBenchTrain(net, config)
-        self.model.to(self.device)
+        self.model = self.model.to(self.device)
+        
+        # アンカーボックスをGPUに明示的に移動（effdetのバグ回避）
+        if hasattr(self.model, 'anchors') and self.model.anchors is not None:
+            if hasattr(self.model.anchors, 'boxes'):
+                self.model.anchors.boxes = self.model.anchors.boxes.to(self.device)
+        
+        # anchor_labelerのアンカーもGPUに移動
+        if hasattr(self.model, 'anchor_labeler'):
+            if hasattr(self.model.anchor_labeler, 'anchors'):
+                if hasattr(self.model.anchor_labeler.anchors, 'boxes'):
+                    self.model.anchor_labeler.anchors.boxes = self.model.anchor_labeler.anchors.boxes.to(self.device)
 
         print(f"Model created: {self.model_name}")
         print(f"Parameters: {sum(p.numel() for p in self.model.parameters()):,}")
@@ -134,10 +145,10 @@ class WaniDetectorTrainer:
         train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
         train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=2
+            train_dataset, batch_size=batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=0
         )
 
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=2)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=0)
 
         return train_loader, val_loader
 
@@ -181,6 +192,18 @@ class WaniDetectorTrainer:
             pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
             for images, targets in pbar:
                 images = images.to(self.device)
+                
+                # targetsの各要素もGPUに移動
+                if 'bbox' in targets:
+                    targets['bbox'] = [bbox.to(self.device) if bbox.numel() > 0 else bbox for bbox in targets['bbox']]
+                if 'cls' in targets:
+                    targets['cls'] = [cls.to(self.device) if cls.numel() > 0 else cls for cls in targets['cls']]
+                if 'img_id' in targets:
+                    targets['img_id'] = targets['img_id'].to(self.device)
+                if 'img_size' in targets:
+                    targets['img_size'] = targets['img_size'].to(self.device)
+                if 'img_scale' in targets:
+                    targets['img_scale'] = targets['img_scale'].to(self.device)
 
                 # Forward pass
                 loss_dict = self.model(images, targets)
@@ -226,6 +249,7 @@ class WaniDetectorTrainer:
         plt.legend()
         plt.grid(True)
         plt.savefig("training_curves.png", dpi=300, bbox_inches="tight")
+        print("Training curves saved to training_curves.png")
         plt.show()
 
 

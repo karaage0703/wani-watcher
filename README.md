@@ -16,7 +16,76 @@ EfficientDet-D0を使用した軽量なワニ検出モデルです。画像生�
 
 ## セットアップ
 
-### 1. 環境構築 (uv使用)
+### Docker を使用する場合（推奨）🐳
+
+#### 前提条件
+
+1. **NVIDIA GPU**が搭載されたマシン
+2. **NVIDIA Container Toolkit**のインストール
+3. **Docker**と**Docker Compose**のインストール
+
+##### NVIDIA Container Toolkitのインストール
+
+```bash
+# Ubuntuの場合
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+#### 1. Dockerイメージのビルド
+
+```bash
+# 初回または依存関係変更時のみ必要
+docker compose build
+```
+
+#### 2. 学習データ生成
+
+```bash
+# 1000枚の学習データを生成
+docker compose run --rm --profile generate wani-generator
+
+# カスタムパラメータで生成
+docker compose run --rm wani-generator uv run python generate_training_data.py --num-images 2000
+```
+
+#### 3. モデル学習
+
+```bash
+# デフォルト設定（50エポック、バッチサイズ8）で学習
+docker compose run --rm wani-trainer
+
+# カスタム設定で学習
+docker compose run --rm wani-trainer uv run python train_wani_detector.py --epochs 100 --batch-size 16 --lr 1e-3
+```
+
+#### 4. 推論実行
+
+```bash
+# test_images/ ディレクトリの画像で検出実行
+docker compose run --rm --profile detect wani-detector
+
+# 特定の画像で推論
+docker compose run --rm wani-detector uv run python detect_wani.py --input test.jpg --output result.jpg
+```
+
+#### GPUの確認
+
+```bash
+# コンテナ内でGPUが認識されているか確認
+docker compose run --rm wani-trainer nvidia-smi
+
+# PyTorchでGPUが利用可能か確認
+docker compose run --rm wani-trainer uv run python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
+```
+
+### ローカル環境を使用する場合
+
+#### 1. 環境構築 (uv使用)
 
 ```bash
 # uvをインストール (未インストールの場合)
@@ -26,21 +95,21 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
 
-### 2. 学習データ生成
+#### 2. 学習データ生成
 
 ```bash
 # 1000枚の学習データを生成
 uv run python generate_training_data.py --num-images 1000
 ```
 
-### 3. モデル学習
+#### 3. モデル学習
 
 ```bash
 # EfficientDet-D0で学習
 uv run python train_wani_detector.py --epochs 50 --batch-size 8
 ```
 
-### 4. 推論実行
+#### 4. 推論実行
 
 ```bash
 # 画像でワニ検出
@@ -62,7 +131,98 @@ wani-watcher/
 │   ├── labels/
 │   └── dataset.yaml
 ├── models/           # 学習済みモデル
-└── runs/            # 学習結果
+├── runs/            # 学習結果
+├── test_images/     # テスト用画像
+├── results/         # 検出結果
+├── docker-compose.yml
+├── Dockerfile
+├── pyproject.toml
+└── uv.lock
+```
+
+## Docker構成の特徴
+
+- **コードのマウント**: ソースコードはコンテナにマウントされるため、コード変更時の再ビルドが不要
+- **依存関係のキャッシュ**: `uv`のキャッシュをボリュームで永続化し、ビルド時間を短縮
+- **GPU対応**: NVIDIA GPUを自動検出して使用
+- **プロファイル機能**: `generate`と`detect`プロファイルで必要なサービスのみ起動
+
+### ボリュームマウント
+
+以下のディレクトリがホストとコンテナ間で共有されます：
+
+- `./images` - 元画像とワニ画像
+- `./training_data` - 生成された学習データ
+- `./models` - 学習済みモデル
+- `./runs` - 学習結果とログ
+- `./test_images` - テスト用画像（推論時）
+- `./results` - 推論結果（推論時）
+
+### トラブルシューティング
+
+#### GPUが認識されない場合
+
+1. NVIDIA Driverの確認
+```bash
+nvidia-smi
+```
+
+2. Docker runtimeの確認
+```bash
+docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+#### メモリ不足エラー
+
+バッチサイズを小さくして実行：
+```bash
+docker compose run --rm wani-trainer uv run python train_wani_detector.py --batch-size 4
+```
+
+#### 権限エラー
+
+生成されたファイルの権限を修正：
+```bash
+sudo chown -R $USER:$USER models/ training_data/ runs/
+```
+
+### パフォーマンス設定
+
+#### GPU使用率の最適化
+
+```bash
+# 特定のGPUを指定（例：GPU 0）
+export CUDA_VISIBLE_DEVICES=0
+docker compose run --rm wani-trainer
+
+# 複数GPUを使用（例：GPU 0と1）
+export CUDA_VISIBLE_DEVICES=0,1
+docker compose run --rm wani-trainer
+```
+
+### 開発モード
+
+インタラクティブモードでコンテナに入る：
+```bash
+docker compose run --rm -it wani-trainer /bin/bash
+```
+
+コンテナ内でJupyter Notebookを起動：
+```bash
+docker compose run --rm -p 8888:8888 wani-trainer uv run jupyter notebook --ip=0.0.0.0 --allow-root
+```
+
+### クリーンアップ
+
+```bash
+# コンテナとネットワークの削除
+docker compose down
+
+# イメージの削除
+docker rmi wani-watcher:latest
+
+# 未使用のボリュームを削除
+docker volume prune
 ```
 
 ## スクリプト詳細
