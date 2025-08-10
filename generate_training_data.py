@@ -44,30 +44,48 @@ class WaniDataGenerator:
         return wani_images
 
     def generate_background(self, width: int = 640, height: int = 640) -> np.ndarray:
-        """ランダムな背景画像を生成"""
-        # カラフルなグラデーション背景
-        bg_type = random.choice(["gradient", "noise", "solid"])
+        """実ゲーム筐体風の背景画像を生成"""
+        background = np.zeros((height, width, 3), dtype=np.uint8)
+        
+        # 80%の確率でゲーム筐体風背景、20%で従来のランダム背景
+        if random.random() < 0.8:
+            # 上部：黄色いゲーム筐体部分（20-50%のランダム割合）
+            yellow_ratio = random.uniform(0.2, 0.5)
+            yellow_height = int(height * yellow_ratio)
+            yellow_color = [30, 200, 255]  # BGR: 黄色
+            background[:yellow_height, :] = yellow_color
+            
+            # 下部：青いゲーム盤面
+            blue_color = [200, 100, 30]  # BGR: 青色
+            background[yellow_height:, :] = blue_color
+            
+            # 微妙なノイズ追加でリアル感向上
+            noise = np.random.randint(-15, 15, background.shape, dtype=np.int16)
+            background = np.clip(background.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            
+        else:
+            # 従来のランダム背景も残す（バリエーション確保）
+            bg_type = random.choice(["gradient", "noise", "solid"])
 
-        if bg_type == "gradient":
-            # グラデーション背景
-            color1 = np.random.randint(0, 255, 3)
-            color2 = np.random.randint(0, 255, 3)
-            background = np.zeros((height, width, 3), dtype=np.uint8)
-            for y in range(height):
-                ratio = y / height
-                color = color1 * (1 - ratio) + color2 * ratio
-                background[y, :] = color.astype(np.uint8)
+            if bg_type == "gradient":
+                # グラデーション背景
+                color1 = np.random.randint(0, 255, 3)
+                color2 = np.random.randint(0, 255, 3)
+                for y in range(height):
+                    ratio = y / height
+                    color = color1 * (1 - ratio) + color2 * ratio
+                    background[y, :] = color.astype(np.uint8)
 
-        elif bg_type == "noise":
-            # ノイズ背景
-            background = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-            background = cv2.GaussianBlur(background, (15, 15), 0)
+            elif bg_type == "noise":
+                # ノイズ背景
+                background = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
+                background = cv2.GaussianBlur(background, (15, 15), 0)
 
-        else:  # solid
-            # 単色背景
-            color = np.random.randint(0, 255, 3)
-            background = np.full((height, width, 3), color, dtype=np.uint8)
-
+            else:  # solid
+                # 単色背景
+                color = np.random.randint(0, 255, 3)
+                background = np.full((height, width, 3), color, dtype=np.uint8)
+        
         return background
 
     def augment_wani_image(self, wani_img: np.ndarray) -> np.ndarray:
@@ -170,8 +188,8 @@ class WaniDataGenerator:
         bg_h, bg_w = background.shape[:2]
         wani_h, wani_w = wani_augmented.shape[:2]
 
-        # スケーリング (背景の20-60%のサイズ)
-        scale = random.uniform(0.2, 0.6)
+        # スケーリング (背景の10-25%のサイズ - より小さく)
+        scale = random.uniform(0.1, 0.25)
         new_wani_w = int(wani_w * scale)
         new_wani_h = int(wani_h * scale)
 
@@ -179,7 +197,7 @@ class WaniDataGenerator:
         wani_resized = cv2.resize(wani_augmented, (new_wani_w, new_wani_h))
         mask_resized = cv2.resize(mask, (new_wani_w, new_wani_h))
 
-        # ランダムな位置に配置
+        # ゲーム画面に合わせた配置（穴の位置付近優先）
         max_x = bg_w - new_wani_w
         max_y = bg_h - new_wani_h
 
@@ -193,6 +211,7 @@ class WaniDataGenerator:
             max_x = bg_w - new_wani_w
             max_y = bg_h - new_wani_h
 
+        # 完全ランダム配置
         x = random.randint(0, max(0, max_x))
         y = random.randint(0, max(0, max_y))
 

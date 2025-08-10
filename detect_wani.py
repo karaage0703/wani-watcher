@@ -70,39 +70,50 @@ class WaniDetector:
         # 推論
         with torch.no_grad():
             output = self.model(input_tensor)
+            print(f"Debug: Model output type: {type(output)}")
+            if isinstance(output, (list, tuple)):
+                print(f"Debug: Output length: {len(output)}")
+                for i, item in enumerate(output):
+                    print(f"Debug: Output[{i}] type: {type(item)}, shape: {item.shape if hasattr(item, 'shape') else 'No shape'}")
+                    if hasattr(item, 'max') and hasattr(item, 'min'):
+                        print(f"Debug: Output[{i}] range: {item.min():.4f} to {item.max():.4f}")
+            else:
+                print(f"Debug: Single output shape: {output.shape if hasattr(output, 'shape') else 'No shape'}")
 
-        # 結果の解析（DetBenchPredictの出力形式に合わせて修正）
+        # 結果の解析（DetBenchPredictの実際の出力形式に対応）
         detections = []
-        if output is not None and len(output) > 0:
-            # DetBenchPredictの出力は (boxes, scores, classes) の形式
-            if isinstance(output, (list, tuple)) and len(output) >= 2:
-                boxes, scores = output[0], output[1]
+        if output is not None and output.numel() > 0:
+            # 出力は [batch, detections, 6] の形式
+            # 各検出: [x1, y1, x2, y2, confidence, class_id]
+            output = output.cpu().numpy()
+            
+            print(f"Debug: Processing {output.shape[1]} detections")
+            
+            for i in range(output.shape[1]):  # 100個の検出結果をチェック
+                detection = output[0, i]  # バッチの最初の画像
                 
-                # GPUテンソルからCPUに移動
-                if hasattr(boxes, 'cpu'):
-                    boxes = boxes.cpu().numpy()
-                if hasattr(scores, 'cpu'):
-                    scores = scores.cpu().numpy()
-                
-                # 信頼度でフィルタリング
-                valid_indices = scores > self.confidence_threshold
-                
-                for i, valid in enumerate(valid_indices):
-                    if valid and i < len(boxes):
-                        box = boxes[i]
-                        score = scores[i]
+                if len(detection) >= 6:
+                    x1, y1, x2, y2, confidence, class_id = detection
+                    
+                    print(f"Debug: Detection {i}: conf={confidence:.4f}, class={class_id:.1f}, bbox=[{x1:.1f},{y1:.1f},{x2:.1f},{y2:.1f}]")
+                    
+                    # 信頼度でフィルタリング
+                    if confidence > self.confidence_threshold:
+                        # 座標を元の画像サイズに変換
+                        x1 = int(x1 * original_size[0] / 512)
+                        y1 = int(y1 * original_size[1] / 512)
+                        x2 = int(x2 * original_size[0] / 512)
+                        y2 = int(y2 * original_size[1] / 512)
                         
-                        # YXYX形式からXYXY形式に変換
-                        if len(box) >= 4:
-                            y1, x1, y2, x2 = box[:4]
-                            
-                            # 座標を元の画像サイズに変換
-                            x1 = int(x1 * original_size[0] / 512)
-                            y1 = int(y1 * original_size[1] / 512)
-                            x2 = int(x2 * original_size[0] / 512)
-                            y2 = int(y2 * original_size[1] / 512)
-                            
-                            detections.append({"bbox": [x1, y1, x2, y2], "confidence": float(score), "class": "wani"})
+                        detections.append({
+                            "bbox": [x1, y1, x2, y2], 
+                            "confidence": float(confidence), 
+                            "class": "wani"
+                        })
+                        
+                        print(f"Debug: Added detection with confidence {confidence:.4f}")
+            
+            print(f"Debug: Total valid detections: {len(detections)}")
 
         return detections
 
