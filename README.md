@@ -4,7 +4,7 @@
 
 ## 概要
 
-EfficientDet-D0を使用した軽量なワニ検出モデルです。画像生成による学習データ拡張とアノテーション自動生成機能付き。
+EfficientDet-D0を使用した軽量なワニ検出モデルです。画像生成による学習データ拡張とアノテーション自動生成機能付き。Docker環境での開発に最適化されており、コードの変更が即座に反映されるため、効率的な開発が可能です。
 
 ## 特徴
 
@@ -13,6 +13,26 @@ EfficientDet-D0を使用した軽量なワニ検出モデルです。画像生�
 - 🚀 高速推論 (リアルタイム検出対応)
 - 🎨 自動データ拡張・アノテーション生成
 - 📱 モバイル/組み込み対応
+
+## クイックスタート 🚀
+
+```bash
+# 1. リポジトリをクローン
+git clone https://github.com/karaage0703/wani-watcher.git
+cd wani-watcher
+
+# 2. Dockerイメージをビルド
+docker compose build
+
+# 3. 学習データを生成（1000枚）
+docker compose --profile generate run --rm wani-generator
+
+# 4. モデルを学習（テスト用：10エポック）
+docker compose run --rm wani-trainer uv run python train_wani_detector.py --epochs 10
+
+# 5. 学習結果を確認
+ls -la models/
+```
 
 ## セットアップ
 
@@ -46,10 +66,10 @@ docker compose build
 #### 2. 学習データ生成
 
 ```bash
-# 1000枚の学習データを生成
-docker compose run --rm --profile generate wani-generator
+# 1000枚の学習データを生成（デフォルト）
+docker compose --profile generate run --rm wani-generator
 
-# カスタムパラメータで生成
+# カスタムパラメータで生成（例：2000枚）
 docker compose run --rm wani-generator uv run python generate_training_data.py --num-images 2000
 ```
 
@@ -67,7 +87,7 @@ docker compose run --rm wani-trainer uv run python train_wani_detector.py --epoc
 
 ```bash
 # test_images/ ディレクトリの画像で検出実行
-docker compose run --rm --profile detect wani-detector
+docker compose --profile detect run --rm wani-detector
 
 # 特定の画像で推論
 docker compose run --rm wani-detector uv run python detect_wani.py --input test.jpg --output result.jpg
@@ -149,14 +169,8 @@ wani-watcher/
 
 ### ボリュームマウント
 
-以下のディレクトリがホストとコンテナ間で共有されます：
-
-- `./images` - 元画像とワニ画像
-- `./training_data` - 生成された学習データ
-- `./models` - 学習済みモデル
-- `./runs` - 学習結果とログ
-- `./test_images` - テスト用画像（推論時）
-- `./results` - 推論結果（推論時）
+Docker環境では、コンテナ内の `/workspace` にホストのカレントディレクトリが全てマウントされます。
+これにより、コードやデータの変更が即座に反映され、生成されたファイルもホスト側に保存されます。
 
 ### トラブルシューティング
 
