@@ -39,7 +39,12 @@ class WaniDataset(Dataset):
         img_path = self.image_files[idx]
         image = Image.open(img_path).convert("RGB")
 
-        # ラベル読み込み
+        # 先にリサイズ
+        original_size = image.size
+        if image.size != (self.img_size, self.img_size):
+            image = image.resize((self.img_size, self.img_size))
+
+        # ラベル読み込み（リサイズ後の画像サイズで変換）
         label_path = self.labels_dir / f"{img_path.stem}.txt"
         boxes = []
         labels = []
@@ -51,8 +56,8 @@ class WaniDataset(Dataset):
                     if len(parts) == 5:
                         class_id, x_center, y_center, width, height = map(float, parts)
 
-                        # YOLO形式からXYXY形式に変換（effdet用）
-                        img_w, img_h = image.size
+                        # YOLO形式からXYXY形式に変換（リサイズ後のサイズで）
+                        img_w, img_h = self.img_size, self.img_size
                         x1 = (x_center - width / 2) * img_w
                         y1 = (y_center - height / 2) * img_h
                         x2 = (x_center + width / 2) * img_w
@@ -61,15 +66,6 @@ class WaniDataset(Dataset):
                         # XYXY形式で保存
                         boxes.append([x1, y1, x2, y2])
                         labels.append(int(class_id) + 1)  # effdetでは1から開始
-
-        # リサイズ
-        if image.size != (self.img_size, self.img_size):
-            scale_x = self.img_size / image.width
-            scale_y = self.img_size / image.height
-            image = image.resize((self.img_size, self.img_size))
-
-            # ボックス座標もリサイズに合わせて調整（XYXY形式）
-            boxes = [[x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y] for x1, y1, x2, y2 in boxes]
 
         if self.transform:
             image = self.transform(image)
@@ -88,7 +84,7 @@ class WaniDataset(Dataset):
             "cls": labels,  # クラスラベル
             "img_id": torch.tensor([idx]),
             "img_size": torch.tensor([self.img_size, self.img_size]),
-            "img_scale": torch.tensor(1.0)
+            "img_scale": torch.tensor(1.0),
         }
 
         return image, target
@@ -113,16 +109,16 @@ class WaniDetectorTrainer:
         net = EfficientDet(config, pretrained_backbone=True)
         self.model = DetBenchTrain(net, config)
         self.model = self.model.to(self.device)
-        
+
         # アンカーボックスをGPUに明示的に移動（effdetのバグ回避）
-        if hasattr(self.model, 'anchors') and self.model.anchors is not None:
-            if hasattr(self.model.anchors, 'boxes'):
+        if hasattr(self.model, "anchors") and self.model.anchors is not None:
+            if hasattr(self.model.anchors, "boxes"):
                 self.model.anchors.boxes = self.model.anchors.boxes.to(self.device)
-        
+
         # anchor_labelerのアンカーもGPUに移動
-        if hasattr(self.model, 'anchor_labeler'):
-            if hasattr(self.model.anchor_labeler, 'anchors'):
-                if hasattr(self.model.anchor_labeler.anchors, 'boxes'):
+        if hasattr(self.model, "anchor_labeler"):
+            if hasattr(self.model.anchor_labeler, "anchors"):
+                if hasattr(self.model.anchor_labeler.anchors, "boxes"):
                     self.model.anchor_labeler.anchors.boxes = self.model.anchor_labeler.anchors.boxes.to(self.device)
 
         print(f"Model created: {self.model_name}")
@@ -156,17 +152,19 @@ class WaniDetectorTrainer:
         """バッチデータの整形（effdet用）"""
         images, targets = list(zip(*batch))
         images = torch.stack(images, 0)
-        
+
         # effdetが期待する形式に変換
         batch_targets = {}
-        
+
         # 各項目を統合
-        batch_targets['bbox'] = [t['bbox'] for t in targets]
-        batch_targets['cls'] = [t['cls'] for t in targets]
-        batch_targets['img_id'] = torch.cat([t['img_id'] for t in targets])
-        batch_targets['img_size'] = torch.stack([t['img_size'] for t in targets])
-        batch_targets['img_scale'] = torch.stack([t['img_scale'].unsqueeze(0) if t['img_scale'].dim() == 0 else t['img_scale'] for t in targets])
-        
+        batch_targets["bbox"] = [t["bbox"] for t in targets]
+        batch_targets["cls"] = [t["cls"] for t in targets]
+        batch_targets["img_id"] = torch.cat([t["img_id"] for t in targets])
+        batch_targets["img_size"] = torch.stack([t["img_size"] for t in targets])
+        batch_targets["img_scale"] = torch.stack(
+            [t["img_scale"].unsqueeze(0) if t["img_scale"].dim() == 0 else t["img_scale"] for t in targets]
+        )
+
         return images, batch_targets
 
     def train(self, epochs: int = 50, batch_size: int = 8, lr: float = 1e-4):
@@ -192,18 +190,18 @@ class WaniDetectorTrainer:
             pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
             for images, targets in pbar:
                 images = images.to(self.device)
-                
+
                 # targetsの各要素もGPUに移動
-                if 'bbox' in targets:
-                    targets['bbox'] = [bbox.to(self.device) if bbox.numel() > 0 else bbox for bbox in targets['bbox']]
-                if 'cls' in targets:
-                    targets['cls'] = [cls.to(self.device) if cls.numel() > 0 else cls for cls in targets['cls']]
-                if 'img_id' in targets:
-                    targets['img_id'] = targets['img_id'].to(self.device)
-                if 'img_size' in targets:
-                    targets['img_size'] = targets['img_size'].to(self.device)
-                if 'img_scale' in targets:
-                    targets['img_scale'] = targets['img_scale'].to(self.device)
+                if "bbox" in targets:
+                    targets["bbox"] = [bbox.to(self.device) if bbox.numel() > 0 else bbox for bbox in targets["bbox"]]
+                if "cls" in targets:
+                    targets["cls"] = [cls.to(self.device) if cls.numel() > 0 else cls for cls in targets["cls"]]
+                if "img_id" in targets:
+                    targets["img_id"] = targets["img_id"].to(self.device)
+                if "img_size" in targets:
+                    targets["img_size"] = targets["img_size"].to(self.device)
+                if "img_scale" in targets:
+                    targets["img_scale"] = targets["img_scale"].to(self.device)
 
                 # Forward pass
                 loss_dict = self.model(images, targets)

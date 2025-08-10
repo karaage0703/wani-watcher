@@ -46,7 +46,7 @@ class WaniDataGenerator:
     def generate_background(self, width: int = 640, height: int = 640) -> np.ndarray:
         """実ゲーム筐体風の背景画像を生成"""
         background = np.zeros((height, width, 3), dtype=np.uint8)
-        
+
         # 80%の確率でゲーム筐体風背景、20%で従来のランダム背景
         if random.random() < 0.8:
             # 上部：黄色いゲーム筐体部分（20-50%のランダム割合）
@@ -54,15 +54,15 @@ class WaniDataGenerator:
             yellow_height = int(height * yellow_ratio)
             yellow_color = [30, 200, 255]  # BGR: 黄色
             background[:yellow_height, :] = yellow_color
-            
+
             # 下部：青いゲーム盤面
             blue_color = [200, 100, 30]  # BGR: 青色
             background[yellow_height:, :] = blue_color
-            
+
             # 微妙なノイズ追加でリアル感向上
             noise = np.random.randint(-15, 15, background.shape, dtype=np.int16)
             background = np.clip(background.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-            
+
         else:
             # 従来のランダム背景も残す（バリエーション確保）
             bg_type = random.choice(["gradient", "noise", "solid"])
@@ -85,7 +85,7 @@ class WaniDataGenerator:
                 # 単色背景
                 color = np.random.randint(0, 255, 3)
                 background = np.full((height, width, 3), color, dtype=np.uint8)
-        
+
         return background
 
     def augment_wani_image(self, wani_img: np.ndarray) -> np.ndarray:
