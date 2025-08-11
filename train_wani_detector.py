@@ -100,10 +100,20 @@ class WaniDetectorTrainer:
         print(f"Using device: {self.device}")
 
     def setup_model(self, num_classes: int = 1):
-        """EfficientDet-D0モデルのセットアップ"""
+        """EfficientDetモデルのセットアップ"""
         config = get_efficientdet_config(self.model_name)
         config.num_classes = num_classes
-        config.image_size = (512, 512)  # タプル形式で指定
+        # モデルに応じた入力サイズを設定
+        if self.model_name == "efficientdet_d0":
+            config.image_size = (512, 512)
+        elif self.model_name == "efficientdet_d1":
+            config.image_size = (640, 640)
+        elif self.model_name == "efficientdet_d2":
+            config.image_size = (768, 768)
+        elif self.model_name == "efficientdet_d3":
+            config.image_size = (896, 896)
+        else:
+            config.image_size = (512, 512)  # デフォルト
 
         # モデル作成
         net = EfficientDet(config, pretrained_backbone=True)
@@ -133,7 +143,13 @@ class WaniDetectorTrainer:
         images_dir = self.data_dir / "images"
         labels_dir = self.data_dir / "labels"
 
-        dataset = WaniDataset(images_dir, labels_dir, transform=transform)
+        # モデルに応じた画像サイズを取得
+        if hasattr(self.model, 'config'):
+            img_size = self.model.config.image_size[0]
+        else:
+            img_size = 512
+        
+        dataset = WaniDataset(images_dir, labels_dir, transform=transform, img_size=img_size)
 
         # 訓練/検証分割 (80/20)
         train_size = int(0.8 * len(dataset))
