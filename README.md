@@ -4,14 +4,11 @@
 
 ## 概要
 
-EfficientDet (D0/D2)およびRT-DETRを使用した軽量なワニ検出モデルです。画像生成による学習データ拡張とアノテーション自動生成機能付き。Docker環境での開発に最適化されており、コードの変更が即座に反映されるため、効率的な開発が可能です。
+EfficientDet-D0を使用した軽量なワニ検出モデルです。画像生成による学習データ拡張とアノテーション自動生成機能付き。Docker環境での開発に最適化されており、コードの変更が即座に反映されるため、効率的な開発が可能です。
 
 ## 特徴
 
-- 🎯 複数のモデル対応（用途に応じて選択可能）
-  - **EfficientDet-D0** (~6.5MB) - 最軽量、組み込み向け
-  - **EfficientDet-D2** (~20MB) - 高精度、バランス型
-  - **RT-DETR** (~32-65MB) - 最高速、NMS不要
+- 🎯 軽量モデル (EfficientDet-D0, ~6.5MB)
 - 📄 Apache 2.0ライセンス (商用利用可能)
 - 🚀 高速推論 (リアルタイム検出対応)
 - 🎨 自動データ拡張・アノテーション生成
@@ -31,14 +28,7 @@ docker compose build
 docker compose --profile generate run --rm wani-generator
 
 # 4. モデルを学習（テスト用：10エポック）
-# EfficientDet-D0の場合（最軽量）
 docker compose run --rm wani-trainer uv run python train_wani_detector.py --epochs 10
-
-# EfficientDet-D2の場合（高精度）
-docker compose --profile d2 run --rm efficientdet-d2-trainer
-
-# RT-DETRの場合（最高速）
-docker compose --profile rtdetr run --rm rtdetr-trainer
 
 # 5. 学習結果を確認
 ls -la models/
@@ -85,31 +75,12 @@ docker compose run --rm wani-generator uv run python generate_training_data.py -
 
 #### 3. モデル学習
 
-##### EfficientDet-D0で学習（最軽量）
 ```bash
 # デフォルト設定（50エポック、バッチサイズ8）で学習
 docker compose run --rm wani-trainer
 
 # カスタム設定で学習
 docker compose run --rm wani-trainer uv run python train_wani_detector.py --epochs 100 --batch-size 16 --lr 1e-3
-```
-
-##### EfficientDet-D2で学習（高精度）
-```bash
-# デフォルト設定で学習（バッチサイズは2に減らしてメモリ対応）
-docker compose --profile d2 run --rm efficientdet-d2-trainer
-
-# カスタム設定で学習
-docker compose run --rm wani-trainer uv run python train_wani_d2.py --epochs 100 --batch-size 2
-```
-
-##### RT-DETRで学習（最高速）
-```bash
-# デフォルト設定で学習
-docker compose --profile rtdetr run --rm rtdetr-trainer
-
-# カスタム設定で学習
-docker compose run --rm rtdetr-trainer uv run python train_rtdetr.py --epochs 100 --batch-size 16 --model-size l
 ```
 
 #### 4. 推論実行
@@ -154,14 +125,8 @@ uv run python generate_training_data.py --num-images 1000
 #### 3. モデル学習
 
 ```bash
-# EfficientDet-D0で学習（最軽量）
+# EfficientDet-D0で学習
 uv run python train_wani_detector.py --epochs 50 --batch-size 8
-
-# EfficientDet-D2で学習（高精度）
-uv run python train_wani_d2.py --epochs 50 --batch-size 2
-
-# RT-DETRで学習（最高速）
-uv run python train_rtdetr.py --epochs 50 --batch-size 16 --model-size l
 ```
 
 #### 4. 推論実行
@@ -286,17 +251,6 @@ docker volume prune
 - 学習曲線可視化
 - モデル保存
 
-### train_wani_d2.py
-- EfficientDet-D2での学習
-- D0より高精度（768x768入力）
-- バッチサイズを小さくしてメモリ対応
-
-### train_rtdetr.py
-- RT-DETRでの学習（Apache 2.0ライセンス）
-- NMS不要で高速推論
-- YOLOv11より高速
-- モデルサイズ: l (large) / x (extra large)
-
 ### detect_wani.py
 - 画像・動画でのワニ検出
 - バウンディングボックス描画
@@ -304,26 +258,10 @@ docker volume prune
 
 ## パフォーマンス
 
-### モデル比較
-
-| モデル | サイズ | 入力解像度 | FPS (GPU) | AP50 | 用途 |
-|--------|-------|-----------|-----------|------|------|
-| **EfficientDet-D0** | ~6.5MB | 512x512 | ~30 | >0.9 | 組み込み/モバイル |
-| **EfficientDet-D2** | ~20MB | 768x768 | ~20 | >0.93 | 高精度要求 |
-| **RT-DETR-L** | ~32MB | 640x640 | ~100+ | >0.92 | リアルタイム |
-| **RT-DETR-X** | ~65MB | 640x640 | ~80 | >0.94 | 最高精度 |
-
-### 選択指針
-- **組み込み/モバイル**: EfficientDet-D0
-- **バランス重視**: EfficientDet-D2
-- **速度最優先**: RT-DETR-L
-- **精度最優先**: RT-DETR-X
+- モデルサイズ: ~6.5MB
+- 推論速度: ~30 FPS (GPU使用時)
+- 精度: AP50 > 0.9 (テストデータ)
 
 ## ライセンス
 
 MIT License - 商用利用可能
-
-### 使用モデルのライセンス
-- EfficientDet (D0/D2): Apache 2.0
-- RT-DETR: Apache 2.0
-- 全モデル商用利用可能、ソース公開義務なし
